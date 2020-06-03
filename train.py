@@ -29,6 +29,10 @@ def main():
     model = net.InPainting(args.use_cuda).to(device)
     model.train()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+    if args.resume:
+        ckpt = torch.load(args.resume)
+        model.load_state_dict(ckpt['ckpt'])
+        optimizer.load_state_dict(ckpt['optim'])
     loss = torch.nn.L1Loss()
 
     data = dataset.Dataset(args.path)

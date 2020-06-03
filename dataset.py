@@ -10,7 +10,7 @@ class Dataset(data.Dataset):
     def __init__(self, path, image_shape=(256, 256)):
         super(Dataset, self).__init__()
         self.image_shape = image_shape
-        self.imgs = util.search_files(path, True, util.inspect_image)
+        self.imgs = util.search_files(path, True)
         self.resize = transforms.Resize(min(self.image_shape))
         self.crop = transforms.RandomCrop(self.image_shape)
         self.flip = transforms.RandomHorizontalFlip()
@@ -25,6 +25,7 @@ class Dataset(data.Dataset):
             assert len(img.mode) == 3
         except AssertionError:
             print('Wrong channels:', self.imgs[idx])
+            img = util.convert_to_3dim(img)
         if h < self.image_shape[0] or w < self.image_shape[1]:
             img = self.resize(img)
         img = self.crop(img)

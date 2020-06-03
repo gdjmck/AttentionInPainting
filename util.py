@@ -78,6 +78,13 @@ def search_files(root, recursive=False, filter_func=None):
             files += search_files(item, recursive, filter_func)
     return files
 
+def convert_to_3dim(img_pil):
+    img = np.array(img_pil)
+    if len(img.shape) == 2:
+        img = img[..., None]
+    img = np.concatenate([img, img, img], -1)
+    return Image.fromarray(img)
+
 if __name__ == '__main__':
     '''
         用来做接口测试
