@@ -26,6 +26,10 @@ class Dataset(data.Dataset):
     def __getitem__(self, idx):
         img = Image.open(self.imgs[idx])
         w, h = img.size
+        try:
+            assert len(img.mode) == 3
+        except AssertionError:
+            print('Wrong channels:', self.imgs[idx])
         if h < self.image_shape[0] or w < self.image_shape[1]:
             img = self.resize(img)
         img = self.crop(img)

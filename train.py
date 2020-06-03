@@ -4,6 +4,7 @@ import dataset
 import argparse
 import sys
 import os
+from tensorboardX import SummaryWriter
 
 def parse_arg():
     parser = argparse.ArgumentParser()
@@ -19,12 +20,13 @@ def main():
     args = parse_arg()
     if not os.path.exists(args.save_dir):
         os.makedirs(args.save_dir)
+    writer = SummaryWriter(os.path.join(args.save_dir, 'tb'))
     if args.use_cuda:
         device = torch.device('cuda')
     else:
         device = torch.device('cpu')
 
-    model = net.InPainting().to(device)
+    model = net.InPainting(args.use_cuda).to(device)
     model.train()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     loss = torch.nn.L1Loss()
@@ -41,13 +43,18 @@ def main():
             for j, item in enumerate(train_loader):
                 img_raw, img_wm = item
                 img_raw, img_wm = img_raw.to(device), img_wm.to(device)
-                recon = model(img_wm)
+                mask, recon = model(img_wm)
                 loss_ = loss(recon, img_raw)
                 optimizer.zero_grad()
                 loss_.backward()
                 optimizer.step()
                 if j % 10 == 0:
                     print(loss_.item())
+                # 记录mask和原图
+                if j % 50 == 0:
+                    step = i*len(train_loader)+j
+                    writer.add_image('mask', mask[0], step)
+                    writer.add_image('img', img_wm[0], step)
     except:
         ckpt = {'ckpt': model.state_dict(),
                 'optim': optimizer.state_dict()}
