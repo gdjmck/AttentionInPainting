@@ -9,13 +9,8 @@ from PIL import Image
 class Dataset(data.Dataset):
     def __init__(self, path, image_shape=(256, 256)):
         super(Dataset, self).__init__()
-        self.image_shape = image_shape        
-        self.imgs = []
-        for item in glob.glob(os.path.join(path, '*')):
-            if os.path.isfile(item):
-                self.imgs.append(item)
-            else:
-                self.imgs += glob.glob(os.path.join(item, '*'))
+        self.image_shape = image_shape
+        self.imgs = util.search_files(path, True, util.inspect_image)
         self.resize = transforms.Resize(min(self.image_shape))
         self.crop = transforms.RandomCrop(self.image_shape)
         self.flip = transforms.RandomHorizontalFlip()

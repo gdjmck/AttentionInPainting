@@ -1,5 +1,7 @@
 import string
+import glob
 import numpy as np
+import os.path as osp
 from PIL import ImageDraw, ImageOps, Image, ImageFont
 
 prints = list(string.printable)[0:84]
@@ -55,3 +57,29 @@ def random_text(img_pil):
 # Change the values of tensor x from range [0, 1] to [-1, 1]
 def normalize(x):
     return x.mul_(2).add_(-1)
+
+def inspect_image(img):
+    if type(img) is str:
+        try:
+            img = Image.open(img)
+        except:
+            return False
+    return len(img.mode) == 3
+
+def search_files(root, recursive=False, filter_func=None):
+    files = []
+    
+    for item in glob.glob(osp.join(root, '*')):
+        if osp.isfile(item):
+            if filter_func is not None and not filter_func(item):
+                continue
+            files.append(item)
+        elif recursive:
+            files += search_files(item, recursive, filter_func)
+    return files
+
+if __name__ == '__main__':
+    '''
+        用来做接口测试
+    '''
+    print(search_files('.', True, inspect_image))
