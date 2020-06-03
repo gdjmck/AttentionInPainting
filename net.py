@@ -27,7 +27,7 @@ class AutoEncoder(nn.Module):
         self.downscale2 = ConvBN(32, 64, 3, 2, 1)
         self.fusion2 = nn.Sequential(ConvBN(128, 64, 1), ConvBN(64, 32, 1))
         self.downscale3 = nn.Sequential(ConvBN(64, 128, 3, 2, 1), ConvBN(128, 64, 1))
-        self.upscale = nn.Upsample(scale_factor=2, mode='bilinear')
+        self.upscale = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
 
 
     def forward(self, x):

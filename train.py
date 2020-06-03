@@ -2,6 +2,7 @@ import net, util
 import torch
 import dataset
 import argparse
+import sys
 import os
 
 def parse_arg():
@@ -40,11 +41,12 @@ def main():
                 optimizer.step()
                 if j % 10 == 0:
                     print(loss_.item())
-    except Exception:
+    except:
         ckpt = {'ckpt': model.state_dict(),
                 'optim': optimizer.state_dict()}
         torch.save(ckpt, os.path.join(args.save_dir, 'latest.pth'))
         print('Save temporary checkpoints to %s'% args.save_dir)
+        sys.exit(0)
     
     print('Done training.')
     ckpt = {'ckpt': model.state_dict(),
