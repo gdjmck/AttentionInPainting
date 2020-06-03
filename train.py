@@ -12,14 +12,20 @@ def parse_arg():
     parser.add_argument('--epochs', type=int, default=200, help='epochs to train')
     parser.add_argument('--resume', type=str, default='', help='checkpoint file')
     parser.add_argument('--save_dir', type=str, default='./ckpt', help='folder to save checkpoint file')
+    parser.add_argument('--use_cuda', action='store_true', help='activate GPU for training')
     return parser.parse_args()
 
 def main():
     args = parse_arg()
     if not os.path.exists(args.save_dir):
         os.makedirs(args.save_dir)
+    if args.use_cuda:
+        device = torch.device('cuda')
+    else:
+        device = torch.device('cpu')
 
-    model = net.InPainting()
+    model = net.InPainting().to(device)
+    model.train()
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     loss = torch.nn.L1Loss()
 
@@ -34,6 +40,7 @@ def main():
             print('Epoch %d'%i)
             for j, item in enumerate(train_loader):
                 img_raw, img_wm = item
+                img_raw, img_wm = img_raw.to(device), img_wm.to(device)
                 recon = model(img_wm)
                 loss_ = loss(recon, img_raw)
                 optimizer.zero_grad()
