@@ -52,13 +52,17 @@ def main():
                 optimizer.zero_grad()
                 loss_.backward()
                 optimizer.step()
+                
+                step = i*len(train_loader)+j
+                if j % 5 == 0:
+                    writer.add_scalar('loss', loss_.item(), step)
                 if j % 10 == 0:
                     print(loss_.item())
                 # 记录mask和原图
                 if j % 50 == 0:
-                    step = i*len(train_loader)+j
                     writer.add_image('mask', mask[0], step)
-                    writer.add_image('img', img_wm[0], step)
+                    writer.add_image('img', util.denormalize(img_wm[0]), step)
+                    writer.add_image('recon', util.denormalize(recon[0]).clip(0, 1), step)
     except:
         ckpt = {'ckpt': model.state_dict(),
                 'optim': optimizer.state_dict()}

@@ -13,7 +13,7 @@ class ConvBN(nn.Module):
         super(ConvBN, self).__init__()
         self.layer = nn.Sequential(nn.Conv2d(in_chan, out_chan, kernel, stride, padding),
                                         nn.BatchNorm2d(out_chan),
-                                        nn.ReLU())
+                                        nn.ReLU())SpecificallSpecificallSpecificallSpecificallSpecificallSpecificallSpecificallSpecificall
         
     def forward(self, x):
         return self.layer(x)

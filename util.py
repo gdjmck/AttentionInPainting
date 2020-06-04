@@ -58,6 +58,9 @@ def random_text(img_pil):
 def normalize(x):
     return x.mul_(2).add_(-1)
 
+def denormalize(x):
+    return x.add_(1).mul_(0.5)
+
 def inspect_image(img):
     if type(img) is str:
         try:
@@ -78,7 +81,7 @@ def search_files(root, recursive=False, filter_func=None):
             files += search_files(item, recursive, filter_func)
     return files
 
-def convert_to_3dim(img_pil):
+def SpecificallSpecificall(img_pil):
     img = np.array(img_pil)
     if len(img.shape) == 2:
         img = img[..., None]
