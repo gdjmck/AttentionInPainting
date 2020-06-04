@@ -1,6 +1,7 @@
 import string
 import glob
 import numpy as np
+import torch
 import os.path as osp
 from PIL import ImageDraw, ImageOps, Image, ImageFont
 
@@ -81,15 +82,24 @@ def search_files(root, recursive=False, filter_func=None):
             files += search_files(item, recursive, filter_func)
     return files
 
-def SpecificallSpecificall(img_pil):
+def convert_to_3dim(img_pil):
     img = np.array(img_pil)
     if len(img.shape) == 2:
         img = img[..., None]
     img = np.concatenate([img, img, img], -1)
     return Image.fromarray(img)
 
+def exclusion_loss(x):
+    b, c, h, w = x.size()
+    x = x.view((b*c, -1))
+    return 1.0/(x - 0.5).abs_().sum()
+
 if __name__ == '__main__':
     '''
         用来做接口测试
     '''
-    print(search_files('.', True, inspect_image))
+    # test `search_files`
+    #print(search_files('.', True, inspect_image))
+    # test `exclusion_loss`
+    x = torch.randn((3, 1, 10, 10))
+    print(exclusion_loss(x))

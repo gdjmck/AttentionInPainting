@@ -48,16 +48,19 @@ def main():
                 img_raw, img_wm = item
                 img_raw, img_wm = img_raw.to(device), img_wm.to(device)
                 mask, recon = model(img_wm)
-                loss_ = loss(recon, img_raw)
+                loss_mask = util.exclusion_loss(mask)
+                loss_recon = loss(recon, img_raw)
+                loss_ = loss_recon + loss_mask
                 optimizer.zero_grad()
                 loss_.backward()
                 optimizer.step()
                 
                 step = i*len(train_loader)+j
                 if j % 5 == 0:
-                    writer.add_scalar('loss', loss_.item(), step)
+                    writer.add_scalars('loss', 'recon_l1', loss_recon.item(), step)
+                    writer.add_scalars('loss', 'exclusion', loss_mask.item(), step)
                 if j % 10 == 0:
-                    print(loss_.item())
+                    print('Loss: %.3f ( %.3f \t %.3f )'%(loss_.item(), loss_recon.item(), loss_mask.item()))
                 # 记录mask和原图
                 if j % 50 == 0:
                     writer.add_image('mask', mask[0], step)
