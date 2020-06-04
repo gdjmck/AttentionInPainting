@@ -48,7 +48,7 @@ def main():
                 img_raw, img_wm = item
                 img_raw, img_wm = img_raw.to(device), img_wm.to(device)
                 mask, recon = model(img_wm)
-                loss_mask = util.exclusion_loss(mask)
+                loss_mask = 100*util.exclusion_loss(mask)
                 loss_recon = loss(recon, img_raw)
                 loss_ = loss_recon + loss_mask
                 optimizer.zero_grad()
@@ -57,20 +57,21 @@ def main():
                 
                 step = i*len(train_loader)+j
                 if j % 5 == 0:
-                    writer.add_scalars('loss', 'recon_l1', loss_recon.item(), step)
-                    writer.add_scalars('loss', 'exclusion', loss_mask.item(), step)
+                    writer.add_scalars('loss', {'recon_l1': loss_recon.item(),
+                                                'exclusion': loss_mask.item()}, step)
                 if j % 10 == 0:
                     print('Loss: %.3f ( %.3f \t %.3f )'%(loss_.item(), loss_recon.item(), loss_mask.item()))
                 # 记录mask和原图
                 if j % 50 == 0:
                     writer.add_image('mask', mask[0], step)
                     writer.add_image('img', util.denormalize(img_wm[0]), step)
-                    writer.add_image('recon', util.denormalize(recon[0]).clip(0, 1), step)
-    except:
+                    writer.add_image('recon', util.denormalize(recon[0]).clamp(0, 1), step)
+    except Exception as e:
         ckpt = {'ckpt': model.state_dict(),
                 'optim': optimizer.state_dict()}
         torch.save(ckpt, os.path.join(args.save_dir, 'latest.pth'))
         print('Save temporary checkpoints to %s'% args.save_dir)
+        print(e)
         sys.exit(0)
     
     print('Done training.')

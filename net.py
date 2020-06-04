@@ -21,13 +21,13 @@ class ConvBN(nn.Module):
 class AutoEncoder(nn.Module):
     def __init__(self):
         super(AutoEncoder, self).__init__()
-        self.origin_scale = ConvBN(3, 16, 3, 1, 1)
-        self.fusion_ori = nn.Sequential(ConvBN(32, 16, 1), nn.Conv2d(16, 1, 3, 1, 1), nn.Sigmoid())
-        self.downscale1 = ConvBN(16, 32, 3, 2, 1)
-        self.fusion1 = nn.Sequential(ConvBN(64, 32, 1), ConvBN(32, 16, 1))
-        self.downscale2 = ConvBN(32, 64, 3, 2, 1)
-        self.fusion2 = nn.Sequential(ConvBN(128, 64, 1), ConvBN(64, 32, 1))
-        self.downscale3 = nn.Sequential(ConvBN(64, 128, 3, 2, 1), ConvBN(128, 64, 1))
+        self.origin_scale = ConvBN(3, 32, 3, 1, 1)
+        self.fusion_ori = nn.Sequential(ConvBN(64, 32, 1), nn.Conv2d(32, 1, 3, 1, 1), nn.Sigmoid())
+        self.downscale1 = ConvBN(32, 64, 3, 2, 1)
+        self.fusion1 = nn.Sequential(ConvBN(128, 64, 1), ConvBN(64, 32, 1))
+        self.downscale2 = ConvBN(64, 128, 3, 2, 1)
+        self.fusion2 = nn.Sequential(ConvBN(256, 128, 1), ConvBN(128, 64, 1))
+        self.downscale3 = nn.Sequential(ConvBN(128, 256, 3, 2, 1), ConvBN(256, 128, 1))
         self.upscale = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False)
 
 
