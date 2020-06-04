@@ -48,9 +48,10 @@ def main():
                 img_raw, img_wm = item
                 img_raw, img_wm = img_raw.to(device), img_wm.to(device)
                 mask, recon = model(img_wm)
-                loss_mask = 100*util.exclusion_loss(mask)
+                loss_mask_reg = mask.clamp(0, 1).mean()
+                loss_mask = 1000*util.exclusion_loss(mask)
                 loss_recon = loss(recon, img_raw)
-                loss_ = loss_recon + loss_mask
+                loss_ = loss_recon + loss_mask + loss_mask_reg
                 optimizer.zero_grad()
                 loss_.backward()
                 optimizer.step()
@@ -58,9 +59,10 @@ def main():
                 step = i*len(train_loader)+j
                 if j % 5 == 0:
                     writer.add_scalars('loss', {'recon_l1': loss_recon.item(),
-                                                'exclusion': loss_mask.item()}, step)
+                                                'exclusion': loss_mask.item(), 
+                                                'mask_reg', loss_mask_reg.item()}, step)
                 if j % 10 == 0:
-                    print('Loss: %.3f ( %.3f \t %.3f )'%(loss_.item(), loss_recon.item(), loss_mask.item()))
+                    print('Loss: %.3f ( %.3f \t %.3f \t %.3f )'%(loss_.item(), loss_recon.item(), loss_mask.item(), loss_mask_reg.item()))
                 # 记录mask和原图
                 if j % 50 == 0:
                     writer.add_image('mask', mask[0], step)
