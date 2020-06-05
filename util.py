@@ -94,6 +94,14 @@ def exclusion_loss(x):
     x = x.view((b*c, -1))
     return 1.0/(x - 0.5).abs_().sum()
 
+def weighted_l1(pred, gt, mask):
+    assert pred.size() == gt.size()
+    mask = mask.clamp(0, 1).detach()
+    if mask.size() != pred.size():
+        mask = mask.expand_as(pred)
+    loss = (((pred - gt) * mask)**2).sum()
+    return loss
+
 if __name__ == '__main__':
     '''
         用来做接口测试

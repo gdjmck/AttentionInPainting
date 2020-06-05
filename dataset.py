@@ -14,6 +14,7 @@ class Dataset(data.Dataset):
         self.resize = transforms.Resize(min(self.image_shape))
         self.crop = transforms.RandomCrop(self.image_shape)
         self.flip = transforms.RandomHorizontalFlip()
+        self.to_tensor = transforms.ToTensor()
 
     def __len__(self):
         return len(self.imgs)
@@ -32,7 +33,7 @@ class Dataset(data.Dataset):
         img = self.flip(img)
         img_watermark = util.random_text(img.copy())[0]
 
-        img = util.normalize(transforms.ToTensor()(img))
+        img = util.normalize(self.to_tensor(img))
         img_watermark = util.normalize(transforms.ToTensor()(img_watermark))
 
         return img, img_watermark

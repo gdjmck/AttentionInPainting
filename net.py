@@ -93,7 +93,9 @@ class InPainting(nn.Module):
             # avoid early clipping, results in no gradient
             if mask_mean >= 0.4:
                 mask_mean /= 2
-            mask[mask<mask_mean] = 0
+            mask_clone = mask.clone()
+            mask_clone[mask<mask_mean] = 0
+            mask = mask_clone
         '''
         blank = torch.ones_like(x)
         inpaint_input = mask * blank + (1-mask) * x
