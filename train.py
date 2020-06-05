@@ -60,7 +60,7 @@ def main():
                 if j % 5 == 0:
                     writer.add_scalars('loss', {'recon_l1': loss_recon.item(),
                                                 'exclusion': loss_mask.item(), 
-                                                'mask_reg', loss_mask_reg.item()}, step)
+                                                'mask_reg': loss_mask_reg.item()}, step)
                 if j % 10 == 0:
                     print('Loss: %.3f ( %.3f \t %.3f \t %.3f )'%(loss_.item(), loss_recon.item(), loss_mask.item(), loss_mask_reg.item()))
                 # 记录mask和原图

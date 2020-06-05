@@ -3,10 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 # 从GAN InPainting引入in painting模型
 import sys
-sys.path.reverse()
-sys.path.append('/home/chengk/chk-root/demos/AttentionInPainting/generative-inpainting-pytorch')
-sys.path.reverse()
-from model.networks import CoarseGenerator, gen_conv
+from sub.generative_inpainting.model.networks import CoarseGenerator, gen_conv
 
 class ConvBN(nn.Module):
     def __init__(self, in_chan, out_chan, kernel=3, stride=1, padding=0):
@@ -83,13 +80,20 @@ class Generator(CoarseGenerator):
         return x_stage1
 
 class InPainting(nn.Module):
-    def __init__(self, cuda=False):
+    def __init__(self, cuda=False, mask_clipping=True):
         super(InPainting, self).__init__()
+        self.clipping = mask_clipping
         self.encoder = AutoEncoder()
         self.painter = Generator(3, 32, cuda)
 
     def forward(self, x):
         mask = self.encoder(x)
+        if self.clipping:
+            mask_mean = mask.mean().detach()
+            # avoid early clipping, results in no gradient
+            if mask_mean >= 0.4:
+                mask_mean /= 2
+            mask[mask<mask_mean] = 0
         '''
         blank = torch.ones_like(x)
         inpaint_input = mask * blank + (1-mask) * x
