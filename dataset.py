@@ -3,6 +3,7 @@ import os
 import torch
 import util
 import torch.utils.data as data
+import numpy as np
 import torchvision.transforms as transforms
 from PIL import Image
 
@@ -31,9 +32,11 @@ class Dataset(data.Dataset):
             img = self.resize(img)
         img = self.crop(img)
         img = self.flip(img)
-        img_watermark = util.random_text(img.copy())[0]
-
         img = util.normalize(self.to_tensor(img))
-        img_watermark = util.normalize(transforms.ToTensor()(img_watermark))
+        if np.random.random() > 0.1:
+            img_watermark = util.random_text(img.copy())[0]
+            img_watermark = util.normalize(self.to_tensor(img_watermark))
+        else:
+            img_watermark = img.clone()
 
         return img, img_watermark
