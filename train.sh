@@ -1,0 +1,1 @@
+nohup python -u train.py --path /home/chengk/chk/data/Large-scale_Visible_Watermark_Dataset/ --path_origin original_images/test --path_wm watermarked_images/test --path_anno watermarked_images/test_imageID.txt --batchsize 6 --save_dir ./ckpt_fix_painter --epochs 25 --use_cuda --fix_recon --resume ./ckpt_fix_painter/latest.pth > nohup_2stage.out 2>&1 &

@@ -1,0 +1,1 @@
+python -u test.py --batchsize 4 --resume ./ckpt_fix_painter/latest.pth --path /home/chengk/chk/data/Large-scale_Visible_Watermark_Dataset/ --path_origin original_images/train --path_wm watermarked_images/train --path_anno watermarked_images/train_imageID.txt --save_dir ./test_ckpt_mask_sup --use_cuda

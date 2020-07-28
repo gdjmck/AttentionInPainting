@@ -4,6 +4,8 @@ import numpy as np
 import torch
 import os.path as osp
 from PIL import ImageDraw, ImageOps, Image, ImageFont
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 
 prints = list(string.printable)[0:84]
 def random_text(img_pil):
@@ -92,15 +94,57 @@ def convert_to_3dim(img_pil):
 def exclusion_loss(x):
     b, c, h, w = x.size()
     x = x.view((b*c, -1))
-    return 1.0/(x - 0.5).abs_().sum()
+    return 1.0/(x - 0.5).abs().sum()
 
 def weighted_l1(pred, gt, mask):
     assert pred.size() == gt.size()
     mask = mask.clamp(0, 1).detach()
     if mask.size() != pred.size():
         mask = mask.expand_as(pred)
-    loss = (((pred - gt) * mask)**2).sum()
+    loss = ((pred - gt) * mask).abs().mean()
     return loss
+
+def iou(mask1, mask2):
+    unions = mask1 | mask2
+    union_count = (unions > 0).sum()
+
+def plot_grad_flow_v2(named_parameters):
+    '''Plots the gradients flowing through different layers in the net during training.
+    Can be used for checking for possible gradient vanishing / exploding problems.
+    
+    Usage: Plug this function in Trainer class after loss.backwards() as 
+    "plot_grad_flow(self.model.named_parameters())" to visualize the gradient flow'''
+    ave_grads = []
+    max_grads= []
+    layers = []
+    for n, p in named_parameters:
+        if(p.requires_grad) and ("bias" not in n):
+            if p.grad is None:
+                #print('no grad:', n)
+                continue
+            n = n.replace('.weight', '').replace('inception', '').replace('branch', 'B').replace('conv', 'c')
+            # 如果长度大于10，每10个字符左右插入换行
+            if len(n) > 10:
+                n = n[:10] + '\n' + n[10:]
+            layers.append(n)
+            ave_grads.append(p.grad.abs().mean())
+            max_grads.append(p.grad.abs().max())
+    #print('layers:', layers)
+    fig = plt.figure(1, figsize=(40, 5))
+    plt.bar(np.arange(len(max_grads)), max_grads, alpha=0.1, lw=1, color="c")
+    plt.bar(np.arange(len(max_grads)), ave_grads, alpha=0.1, lw=1, color="b")
+    plt.hlines(0, 0, len(ave_grads)+1, lw=2, color="k" )
+    plt.xticks(range(0,len(ave_grads), 1), layers, rotation="vertical", fontsize='xx-small')
+    plt.xlim(left=0, right=len(ave_grads))
+    plt.ylim(bottom = -0.001, top=0.02) # zoom in on the lower gradient regions
+    plt.xlabel("Layers")
+    plt.ylabel("average gradient")
+    plt.title("Gradient flow")
+    plt.grid(True)
+    plt.legend([Line2D([0], [0], color="c", lw=4),
+                Line2D([0], [0], color="b", lw=4),
+                Line2D([0], [0], color="k", lw=4)], ['max-gradient', 'mean-gradient', 'zero-gradient'])
+    return fig
 
 if __name__ == '__main__':
     '''

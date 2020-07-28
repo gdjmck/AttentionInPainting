@@ -1,9 +1,11 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch import autograd
 # 从GAN InPainting引入in painting模型
 import sys
-from sub.generative_inpainting.model.networks import CoarseGenerator, gen_conv
+sys.path.append('/home/chengk/chk-root/demos/AttentionInPainting/sub/generative_inpainting')
+from sub.generative_inpainting.model.networks import CoarseGenerator, gen_conv, FineGenerator, DisConvModule
 
 class ConvBN(nn.Module):
     def __init__(self, in_chan, out_chan, kernel=3, stride=1, padding=0):
@@ -43,6 +45,7 @@ class Generator(CoarseGenerator):
     def __init__(self, input_dim, cnum, use_cuda=True, device_ids=None):
         super(Generator, self).__init__(input_dim, cnum, use_cuda, device_ids)
         self.conv1 = gen_conv(input_dim+1, cnum, 5, 1, 2)
+        self.conv_d1_merge = gen_conv(cnum*6, cnum*4, 1, 1)
 
     def forward(self, x, mask):
         ones = torch.ones(x.size(0), 1, x.size(2), x.size(3))
@@ -52,9 +55,9 @@ class Generator(CoarseGenerator):
         # 4 x 256 x 256
         x = ones * mask + x * (1-mask)
         x = self.conv1(torch.cat([x, mask], dim=1))
-        x = self.conv2_downsample(x)
+        x_d1 = self.conv2_downsample(x)
         # cnum*2 x 128 x 128
-        x = self.conv3(x)
+        x = self.conv3(x_d1)
         x = self.conv4_downsample(x)
         # cnum*4 x 64 x 64
         x = self.conv5(x)
@@ -65,11 +68,12 @@ class Generator(CoarseGenerator):
         x = self.conv10_atrous(x)
         x = self.conv11(x)
         x = self.conv12(x)
-        x = F.interpolate(x, scale_factor=2, mode='nearest')
+        x = F.interpolate(x, scale_factor=2, mode='bilinear')
+        x = self.conv_d1_merge(torch.cat([x_d1, x], dim=1))
         # cnum*2 x 128 x 128
         x = self.conv13(x)
         x = self.conv14(x)
-        x = F.interpolate(x, scale_factor=2, mode='nearest')
+        x = F.interpolate(x, scale_factor=2, mode='bilinear')
         # cnum x 256 x 256
         x = self.conv15(x)
         x = self.conv16(x)
@@ -79,12 +83,59 @@ class Generator(CoarseGenerator):
 
         return x_stage1
 
+'''
+class FineGenerator(FineGenerator):
+    def __init__(self, input_dim, cnum, use_cuda=True, device_ids=None):
+        super(FineGenerator, self).__init__(input_dim, cnum, use_cuda, device_ids)
+'''
+
+class Discriminator(nn.Module):
+    def __init__(self, input_dim=3, hidden_dim=64):
+        super(Discriminator, self).__init__()
+        self.input_dim = input_dim
+        self.hidden_dim = hidden_dim
+        self.dis_conv_module = DisConvModule(input_dim, hidden_dim)
+        self.linear = nn.Linear(hidden_dim*4*16*16, 1)
+
+    def forward(self, x):
+        x = self.dis_conv_module(x)
+        # print('dis_conv_module(x):', x.size())
+        x = x.view(x.size()[0], -1)
+        x = self.linear(x)
+        return x
+
+# Calculate gradient penalty
+def calc_gradient_penalty(netD, real_data, fake_data, use_cuda=True):
+    batch_size = real_data.size(0)
+    alpha = torch.rand(batch_size, 1, 1, 1)
+    alpha = alpha.expand_as(real_data)
+    if use_cuda:
+        alpha = alpha.cuda()
+
+    interpolates = alpha * real_data + (1 - alpha) * fake_data
+    interpolates = interpolates.requires_grad_().clone()
+
+    disc_interpolates = netD(interpolates)
+    grad_outputs = torch.ones(disc_interpolates.size())
+
+    if use_cuda:
+        grad_outputs = grad_outputs.cuda()
+
+    gradients = autograd.grad(outputs=disc_interpolates, inputs=interpolates,
+                                grad_outputs=grad_outputs, create_graph=True,
+                                retain_graph=True, only_inputs=True)[0]
+
+    gradients = gradients.view(batch_size, -1)
+    gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
+
+    return gradient_penalty
+
 class InPainting(nn.Module):
     def __init__(self, cuda=False, mask_clipping=True):
         super(InPainting, self).__init__()
         self.clipping = mask_clipping
         self.encoder = AutoEncoder()
-        self.painter = Generator(3, 32, cuda)
+        self.painter = Generator(3, 48, cuda)
 
     def forward(self, x):
         mask = self.encoder(x)
@@ -106,7 +157,17 @@ class InPainting(nn.Module):
 
 
 if __name__ == '__main__':
+    import sys
     model = InPainting()
+    for n, p in [(n, p) for (n, p) in model.named_parameters() if 'fine_painter' not in n]:
+        print(n, p.size())
+    sys.exit(0)
+    for n, p in model.named_parameters():
+        if p not in model.fine_painter.parameters():
+            print(n, p.size())
+    print('====================================================')
+    for n, p in model.fine_painter.named_parameters():
+        print(n, p.size())
     x = torch.randn((1, 3, 256, 256))
     out = model(x)
     print(out.size())
