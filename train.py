@@ -6,8 +6,11 @@ import sys
 import os
 import shutil
 import traceback
+import pdb
 import ssim
 from tensorboardX import SummaryWriter
+
+eps = 1e-6
 
 def parse_arg():
     parser = argparse.ArgumentParser()
@@ -32,7 +35,7 @@ def dis_forward(discriminator, real, fake):
     batch_size_real = real.size(0)
     batch = torch.cat([real, fake], dim=0)
     batch_out = discriminator(batch)
-    batch_out = torch.sigmoid(batch_out)
+    batch_out = batch_out.clamp(0, 1)
     pred_real, pred_fake = torch.split(batch_out, batch_size_real, dim=0)
     return pred_real, pred_fake
 
@@ -50,8 +53,8 @@ def main():
     model_dis = net.Discriminator().to(device)
     model.train()
     model_dis.train()
-    train_params = [p for (n, p) in model.named_parameters() if 'fine_painter' not in n]
-    optimizer = torch.optim.Adam(train_params, lr=args.lr)
+    #train_params = [p for (n, p) in model.named_parameters() if 'fine_painter' not in n]
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     optimizer_dis = torch.optim.Adam(model_dis.parameters(), lr=args.lr)
     if args.resume:
         print('Resume training from ', args.resume)
@@ -74,8 +77,9 @@ def main():
         for p in model.painter.parameters():
             p.requires_grad = False
 
-    loss = torch.nn.L1Loss()
-    loss_bce = torch.nn.BCELoss()
+    loss = torch.nn.L1Loss(reduction='none')
+    loss_bce = torch.nn.BCELoss(reduction='none')
+    loss_l2 = torch.nn.MSELoss()
     ssim_window = ssim.create_window(11, 3).to(device)
 
     #data = dataset.Dataset(args.path)
@@ -93,56 +97,98 @@ def main():
         for i in range(args.epochs):
             epoch_loss = 0
             print('Epoch %d'%i)
+            #item = next(iter(train_loader))
             for j, item in enumerate(train_loader):
+                step = i*batch_per_epoch+j
                 img_raw, img_wm, mask_wm = item
                 img_raw, img_wm, mask_wm = img_raw.to(device), img_wm.to(device), mask_wm.to(device)
-                mask, recon = model(img_wm)
+                mask, recon, recon_coarse = model(img_wm)
                 # 加入discriminator
                 if args.gan_method:
                     # optimize D
                     dis_real, dis_recon = dis_forward(model_dis, img_raw, recon.detach())
-                    dis_wm = torch.sigmoid(model_dis(img_wm))
+                    dis_wm = model_dis(img_wm)
                     assert dis_recon.size() == dis_wm.size()
-                    dis_fake = 0.5*(dis_recon + dis_wm)
-                    loss_disc = torch.mean(-1*torch.log(1-dis_fake) - torch.log(dis_real)) 
-                    loss_gp = net.calc_gradient_penalty(model_dis, img_raw, recon.detach())
-                    loss_d = loss_gp + loss_disc
+                    dis_fake = dis_recon
+                    #dis_fake = 0.5*(dis_recon + dis_wm)
+                    loss_disc = util.hinge_loss(1-dis_real, lower_bound=0, upper_bound=None) + \
+                                util.hinge_loss(dis_fake, lower_bound=0, upper_bound=None)
+                    loss_gp = 0.1*net.calc_gradient_penalty(model_dis, img_raw, recon.detach())
+                    #loss_d = loss_gp + loss_disc
+                    loss_d = loss_disc
+                    # enables discriminator gradient
+                    '''
+                    for p in model_dis.parameters():
+                        p.requires_grad = True
+                    '''
+                    optimizer.zero_grad()
+                    optimizer_dis.zero_grad()
+                    loss_d.backward()
+                    torch.nn.utils.clip_grad_value_(model_dis.parameters(), 0.5)
+                    optimizer_dis.step()
+                    # 画各层的梯度分布图
+                    if j % 100 == 0:
+                        writer.add_figure('discriminator_grad', util.plot_grad_flow_v2(model_dis.named_parameters()), global_step=step)
+                        for n, p in model_dis.named_parameters():
+                            writer.add_histogram('D_'+n, p.grad.data.cpu().numpy(), step)
+
                     # optimize G through D
                     dis_real, dis_recon = dis_forward(model_dis, img_raw, recon)
-                    # print('dis_real:', dis_real.size(), 'dis_recon:', dis_recon.size())
-                    loss_g = 0.001*torch.mean(-1*torch.log(dis_recon))
+                    loss_g = util.hinge_loss(1-dis_recon, lower_bound=0, upper_bound=None)
+                    # print('loss_gp:%.4f \t loss_disc:%.4f \t loss_g:%.4f'% \
+                    #             (loss_gp.item(), loss_disc.item(), loss_g.item()))
 
                 loss_mask_reg = 0.1*mask.clamp(0, 1).mean()
                 # loss_mask = 1000*util.exclusion_loss(mask)
                 try:
-                    loss_mask = loss_bce(mask.clamp(0., 1.), mask_wm.float().clamp(0., 1.))
+                    mask_wm = mask_wm.float().clamp(0., 1.).view(mask.size())
+                    mask_wm_neg = 1 - util.torch_dilate(mask_wm)
+                    loss_mask = loss(mask.clamp(0., 1.)*mask_wm, mask_wm).sum() / (mask_wm.sum()+eps) + \
+                                loss(mask.clamp(0, 1)*mask_wm_neg, mask_wm*mask_wm_neg).sum() / (mask_wm_neg.sum()+eps)
+                    loss_mask = 0.1 * loss_mask
                 except Exception:
-                    import pdb; pdb.set_trace()
+                    pdb.set_trace()
                     if not (mask>=0. & mask <=1.).all():
                         print('错误出在生成的mask')
                     if not (mask_wm>=0. & mask_wm<=1.).all():
                         print('错误出在gt水印')
-                loss_recon = loss(recon, img_raw)
-                loss_ssim = 1-ssim._ssim(0.5*(1+img_raw), 0.5*(1+recon), ssim_window, 11, 3, True)
-                loss_weighted_recon = util.weighted_l1(recon, img_raw, mask)
-                loss_ = loss_recon + loss_mask + loss_ssim
-                if args.gan_method:
-                    loss_ += loss_g
-                    optimizer_dis.zero_grad()
-                    loss_d.backward()
-                    optimizer_dis.step()
+                
+                try:
+                    loss_recon = loss_l2(recon, img_raw)
+                    loss_recon_c = 0.5*loss_l2(recon_coarse, img_raw)
+                    loss_ssim = 0.2*(1-ssim._ssim(0.5*(1+img_raw), 0.5*(1+recon.clamp(-1., 1.)), ssim_window, 11, 3, True))
+                    loss_weighted_recon = util.weighted_l1(recon, img_raw, mask)
+                    loss_ = loss_recon + loss_mask + loss_ssim + loss_recon_c
+                    if args.gan_method:
+                        loss_ += loss_g
 
-                optimizer.zero_grad()
-                loss_.backward()
-                optimizer.step()
+                    optimizer_dis.zero_grad()
+                    optimizer.zero_grad()
+                    loss_.backward()
+                    if args.gan_method:
+                        # disable discriminator gradient
+                        '''
+                        for p in model_dis.parameters():
+                            p.requires_grad = False
+                        '''
+                        torch.nn.utils.clip_grad_value_(model.parameters(), 0.5)
+                    #import pdb; pdb.set_trace()
+                    optimizer.step()
+                except Exception as e:
+                    print(str(e))
+                    #import pdb; pdb.set_trace()
                 
                 epoch_loss += loss_.item()
-                step = i*batch_per_epoch+j
+                # scalar log
                 if j % 5 == 0:
-                    writer.add_scalars('loss', {'recon_l1': loss_recon.item(),
+                    scalar_dict = {'recon_l1': loss_recon.item(),
                                                 'ssim': loss_ssim.item(),
                                                 'exclusion': loss_mask.item(), 
-                                                'mask_reg': loss_mask_reg.item()}, step)
+                                                'mask_reg': loss_mask_reg.item()}
+                    if args.gan_method:
+                        scalar_dict['G'] = loss_g.item()
+                        scalar_dict['D'] = loss_d.item()
+                    writer.add_scalars('loss', scalar_dict, step)
                 if j % 10 == 0:
                     print('Loss: %.3f (recon: %.3f \t ssim: %.3f \t mask: %.3f \t)'%
                             (loss_.item(), loss_recon.item(), loss_ssim.item(), loss_mask.item()))
@@ -152,8 +198,8 @@ def main():
                 if j % 50 == 0:
                     #import pdb; pdb.set_trace()
                     writer.add_images('images', [torch.cat(3*[mask[0].float().to(device)]), 
-                                                torch.cat(3*[mask_wm[0].float().to(device).unsqueeze(0)]), util.denormalize(img_wm[0]), 
-                                                util.denormalize(recon[0]).clamp(0, 1)], global_step=step, dataformats='CHW')
+                                                torch.cat(3*[mask_wm[0].squeeze().float().to(device).unsqueeze(0)]), util.denormalize(img_wm[0]), 
+                                                util.denormalize(recon[0].clamp(-1, 1)).clamp(0, 1)], global_step=step, dataformats='CHW')
                     '''
                     writer.add_image('mask', mask[0], step)
                     writer.add_image('img', util.denormalize(img_wm[0]), step)
@@ -164,10 +210,16 @@ def main():
                 # 画各层的梯度分布图
                 if j % 100 == 0:
                     writer.add_figure('grad_flow', util.plot_grad_flow_v2(model.named_parameters()), global_step=step)
+                    for n, p in model.named_parameters():
+                        writer.add_histogram(n, p.grad.data.cpu().numpy(), step)
                     if args.gan_method:
-                        writer.add_figure('discriminator_grad', util.plot_grad_flow_v2(model_dis.named_parameters()), global_step=step)
+                        for n, p in model_dis.named_parameters():
+                            writer.add_histogram('G_'+n, p.grad.data.cpu().numpy(), step)
+
             ckpt = {'ckpt': model.state_dict(),
                 'optim': optimizer.state_dict()}
+            if args.gan_method:
+                ckpt['ckpt_dis'] = model_dis.state_dict()
             torch.save(ckpt, os.path.join(args.save_dir, 'latest.pth'))
             # 记录所有最好的epoch weight
             if epoch_loss / (j+1) < best_loss:

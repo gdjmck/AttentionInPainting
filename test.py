@@ -40,7 +40,7 @@ def main():
     for i, (img_raw, img_wm, mask_wm) in enumerate(eval_loader):
         img_raw, img_wm = img_raw.to(device), img_wm.to(device)
         with torch.no_grad():
-            mask, recon = model(img_wm)
+            mask, recon = model.test_inference(img_wm)
             loss_recon = loss(recon, img_raw)
             avg_loss += loss_recon.item()
             avg_ssim += ssim._ssim(img_raw, recon, ssim_window, 11, 3, True)

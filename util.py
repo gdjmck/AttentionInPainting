@@ -96,12 +96,21 @@ def exclusion_loss(x):
     x = x.view((b*c, -1))
     return 1.0/(x - 0.5).abs().sum()
 
+def torch_dilate(x, kernel_size=3):
+    kernel = torch.ones((1, 1, kernel_size, kernel_size)).to(x.device)
+    x_dilated = torch.nn.functional.conv2d(x, kernel, padding=(kernel_size//2, kernel_size//2)).clamp(0, 1)
+    #x_dilated = x_dilated.to(x.device)
+    return x_dilated
+
+def hinge_loss(x, upper_bound=1, lower_bound=0):
+    return torch.clamp(x, min=lower_bound, max=upper_bound).mean()
+
 def weighted_l1(pred, gt, mask):
     assert pred.size() == gt.size()
     mask = mask.clamp(0, 1).detach()
     if mask.size() != pred.size():
         mask = mask.expand_as(pred)
-    loss = ((pred - gt) * mask).abs().mean()
+    loss = ((pred - gt) * mask).abs().sum() / mask.sum()
     return loss
 
 def iou(mask1, mask2):
