@@ -90,9 +90,7 @@ def main():
     ssim_window = ssim.create_window(11, 3).to(device)
 
     #data = dataset.Dataset(args.path)
-    data = dataset.LargeScaleWatermarkDataset(folder_origin=os.path.join(args.path, args.path_origin),
-                                                folder_watermarked=os.path.join(args.path, args.path_wm),
-                                                anno_file=os.path.join(args.path, args.path_anno))
+    data = dataset.Dataset(args.path)
     train_loader = torch.utils.data.DataLoader(dataset=data,
                                            batch_size=args.batchsize,
                                            shuffle=True,
