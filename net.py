@@ -5,10 +5,6 @@ import numpy as np
 import shm
 import unet
 from torch import autograd
-# 从GAN InPainting引入in painting模型
-import sys
-sys.path.append('/home/chengk/chk-root/demos/AttentionInPainting/sub/generative_inpainting')
-from sub.generative_inpainting.model.networks import CoarseGenerator, gen_conv, FineGenerator, DisConvModule, Conv2dBlock
 
 class ConvBN(nn.Module):
     def __init__(self, in_chan, out_chan, kernel=3, stride=1, padding=0):
@@ -44,128 +40,6 @@ class AutoEncoder(nn.Module):
         orig_scale = torch.clamp(orig_scale, 0., 1.)
         
         return orig_scale
-
-class Generator(CoarseGenerator):
-    def __init__(self, input_dim, cnum, use_cuda=True, device_ids=None):
-        super(Generator, self).__init__(input_dim, cnum, use_cuda, device_ids)
-        self.conv1 = gen_conv(input_dim+1, cnum, 5, 1, 2)
-        self.conv_d1_merge = gen_conv(cnum*6, cnum*4, 1, 1)
-        self.conv17 = Conv2dBlock(cnum//2, input_dim, 1, 1, conv_padding=0, activation='none', norm='none', use_bias=False)
-
-
-    def forward(self, x, mask):
-        ones = torch.ones(x.size(0), 1, x.size(2), x.size(3))
-        if self.use_cuda:
-            mask = mask.cuda()
-            ones = ones.cuda()
-        # 4 x 256 x 256
-        x = ones * mask + x * (1-mask)
-        #print('x:', x.size())
-        x = self.conv1(torch.cat([x, mask], dim=1))
-        # cnum x 256 x 256
-        #print('conv1:', x.size())
-        x_d1 = self.conv2_downsample(x)
-        #print('x_d1:', x_d1.size())
-        # cnum*2 x 128 x 128
-        x = self.conv3(x_d1)
-        #print('conv3:', x.size())
-        x = self.conv4_downsample(x)
-        #print('conv4_down:', x.size())
-        # cnum*4 x 64 x 64
-        x = self.conv5(x)
-        #print('conv5:', x.size())
-        x = self.conv6(x)
-        #print('conv6:', x.size())
-        x = self.conv7_atrous(x)
-        #print('conv7_atrous:', x.size())
-        x = self.conv8_atrous(x)
-        #print('conv8:', x.size())
-        x = self.conv9_atrous(x)
-        #print('conv9:', x.size())
-        x = self.conv10_atrous(x)
-        #print('conv10:', x.size())
-        x = self.conv11(x)
-        #print('conv11:', x.size())
-        x = self.conv12(x)
-        #print('conv12:', x.size())
-        x = F.interpolate(x, scale_factor=2, mode='bilinear')
-        # concat 96 & 192 channels
-        x = self.conv_d1_merge(torch.cat([x_d1, x], dim=1))
-        #print('conv_d1_merge:', x.size())
-        # cnum*2 x 128 x 128
-        x = self.conv13(x)
-        #print('conv13:', x.size())
-        x = self.conv14(x)
-        #print('conv14:', x.size())
-        x = F.interpolate(x, scale_factor=2, mode='bilinear')
-        # cnum x 256 x 256
-        x = self.conv15(x)
-        #print('conv15:', x.size())
-        x = self.conv16(x)
-        #print('conv16:', x.size())
-        x = self.conv17(x)
-        #print('conv17:', x.size())
-        # 3 x 256 x 256
-        # x_stage1 = torch.clamp(x, -1., 1.)
-        #import pdb; pdb.set_trace()
-
-        return x
-
-class FineGenerator(FineGenerator):
-    def __init__(self, input_dim, cnum, use_cuda=True, device_ids=None):
-        super(FineGenerator, self).__init__(input_dim, cnum, use_cuda, device_ids)
-        self.conv1 = gen_conv(input_dim + 1, cnum, 5, 1, 2)
-        self.pmconv1 = gen_conv(input_dim + 1, cnum, 5, 1, 2)
-        self.allconv11 = gen_conv(cnum*4, cnum*4, 3, 1, 1)
-        self.allconv17 = Conv2dBlock(cnum//2, input_dim, 3, 1, 1, activation='none', norm='none')
-
-    def forward(self, xin, x_stage1, mask):
-        # mask = mask.detach()
-        x1_inpaint = x_stage1 * mask + xin * (1-mask)
-        x_in = torch.cat([x1_inpaint, mask], dim=1)
-        x = self.conv1(x_in)
-        x = self.conv2_downsample(x)
-        x = self.conv3(x)
-        x = self.conv4_downsample(x)
-        x = self.conv5(x)
-        x = self.conv6(x)
-        x = self.conv7_atrous(x)
-        x = self.conv8_atrous(x)
-        x = self.conv9_atrous(x)
-        x = self.conv10_atrous(x)
-        x_hallu = x
-        # attention branch
-        x = self.pmconv1(x_in)
-        x = self.pmconv2_downsample(x)
-        x = self.pmconv3(x)
-        x = self.pmconv4_downsample(x)
-        x = self.pmconv5(x)
-        x = self.pmconv6(x)
-        '''
-        print('before attention:', x.size())
-        x, offset_flow = self.contextul_attention(x, x, mask)
-        print('self-attention:', x.size())
-        '''
-        x = self.pmconv9(x)
-        x = self.pmconv10(x)
-        pm = x
-        #import pdb; pdb.set_trace()
-        #x = torch.cat([x_hallu, pm], dim=1)
-        x = x_hallu + pm
-        # merge two branches
-        x = self.allconv11(x)
-        x = self.allconv12(x)
-        x = F.interpolate(x, scale_factor=2, mode='nearest')
-        x = self.allconv13(x)
-        x = self.allconv14(x)
-        x = F.interpolate(x, scale_factor=2, mode='nearest')
-        x = self.allconv15(x)
-        x = self.allconv16(x)
-        x = self.allconv17(x)
-        #x_stage2 = torch.clamp(x, -1., 1.)
-        
-        return x
-
 
 class Discriminator(nn.Module):
     def __init__(self, input_dim=3, hidden_dim=64):
