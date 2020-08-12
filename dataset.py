@@ -38,16 +38,13 @@ class Dataset(data.Dataset):
         if h < self.image_shape[0] or w < self.image_shape[1]:
             img = self.resize(img)
         img = self.crop(img)
-        img = self.flip(img)        
-        if np.random.random() > 0.1:
-            img_watermark = util.random_text(img.copy())[0]
-            img_watermark = util.normalize(self.to_tensor(img_watermark))
-            img = util.normalize(self.to_tensor(img))
-        else:
-            img = util.normalize(self.to_tensor(img))
-            img_watermark = img.clone()
+        img = self.flip(img)
+        img_watermark = util.random_text(img.copy())[0]
+        img_watermark = util.tv_transform(self.to_tensor(img_watermark))
+        img = util.tv_transform(self.to_tensor(img))
+        mask_wm = np.any(np.array(img) != np.array(img_watermark), axis=-1).astype(np.float)
 
-        return img, img_watermark
+        return img, img_watermark, mask_wm
 
 import traceback
 class LargeScaleWatermarkDataset(data.Dataset):

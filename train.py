@@ -28,6 +28,7 @@ def parse_arg():
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
     parser.add_argument('--fix_mask', action='store_true', help='freeze mask generator')
     parser.add_argument('--fix_recon', action='store_true', help='freeze reconstruction model')
+    parser.add_argument('--init_mask', action='store_true', help='reinit mask generator')
     parser.add_argument('--gan_method', action='store_true', help='use gan based method')
     return parser.parse_args()
 
@@ -53,9 +54,6 @@ def main():
     model_dis = net.Discriminator().to(device)
     model.train()
     model_dis.train()
-    #train_params = [p for (n, p) in model.named_parameters() if 'fine_painter' not in n]
-    optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    optimizer_dis = torch.optim.Adam(model_dis.parameters(), lr=args.lr)
     if args.resume:
         print('Resume training from ', args.resume)
         ckpt = torch.load(args.resume)
@@ -68,6 +66,10 @@ def main():
             print(traceback.format_exc())
             print('Missing keys')
             model.load_state_dict({k: v for k, v in ckpt['ckpt'].items() if 'encoder' in k}, strict=False)
+
+    
+    # setup training parameters
+    train_params = model.parameters()
     if args.fix_mask:
         print('fix mask prediction')
         for p in model.encoder.parameters():
@@ -76,7 +78,12 @@ def main():
         print('fix painter')
         for p in model.painter.parameters():
             p.requires_grad = False
-
+        if args.init_mask:
+            # 重新初始化mask generator
+            print('初始化mask generator的参数')
+            model.encoder.apply(util.weights_init)
+    optimizer = torch.optim.Adam(train_params, lr=args.lr)
+    optimizer_dis = torch.optim.Adam(model_dis.parameters(), lr=args.lr)
     loss = torch.nn.L1Loss(reduction='none')
     loss_bce = torch.nn.BCELoss(reduction='none')
     loss_l2 = torch.nn.MSELoss()
@@ -102,7 +109,7 @@ def main():
                 step = i*batch_per_epoch+j
                 img_raw, img_wm, mask_wm = item
                 img_raw, img_wm, mask_wm = img_raw.to(device), img_wm.to(device), mask_wm.to(device)
-                mask, recon, recon_coarse = model(img_wm)
+                mask, recon = model(img_wm)
                 # 加入discriminator
                 if args.gan_method:
                     # optimize D
@@ -140,25 +147,20 @@ def main():
 
                 loss_mask_reg = 0.1*mask.clamp(0, 1).mean()
                 # loss_mask = 1000*util.exclusion_loss(mask)
-                try:
-                    mask_wm = mask_wm.float().clamp(0., 1.).view(mask.size())
-                    mask_wm_neg = 1 - util.torch_dilate(mask_wm)
-                    loss_mask = loss(mask.clamp(0., 1.)*mask_wm, mask_wm).sum() / (mask_wm.sum()+eps) + \
-                                loss(mask.clamp(0, 1)*mask_wm_neg, mask_wm*mask_wm_neg).sum() / (mask_wm_neg.sum()+eps)
-                    loss_mask = 0.1 * loss_mask
-                except Exception:
-                    pdb.set_trace()
-                    if not (mask>=0. & mask <=1.).all():
-                        print('错误出在生成的mask')
-                    if not (mask_wm>=0. & mask_wm<=1.).all():
-                        print('错误出在gt水印')
+                mask_wm = mask_wm.float().clamp(0., 1.).view(mask.size())
+                mask_wm_neg = 1 - util.torch_dilate(mask_wm)
+                loss_mask = loss(mask*mask_wm, mask_wm).sum() / (mask_wm.sum()+eps) + \
+                            loss(mask*mask_wm_neg, mask_wm*mask_wm_neg).sum() / (mask_wm_neg.sum()+eps)
+                loss_mask = 0.5 * loss_mask
                 
                 try:
                     loss_recon = loss_l2(recon, img_raw)
-                    loss_recon_c = 0.5*loss_l2(recon_coarse, img_raw)
+                    # loss_recon_c = 0.5*loss_l2(recon_coarse, img_raw)
                     loss_ssim = 0.2*(1-ssim._ssim(0.5*(1+img_raw), 0.5*(1+recon.clamp(-1., 1.)), ssim_window, 11, 3, True))
                     loss_weighted_recon = util.weighted_l1(recon, img_raw, mask)
-                    loss_ = loss_recon + loss_mask + loss_ssim + loss_recon_c
+                    loss_ = loss_recon + loss_mask + loss_ssim # + loss_recon_c
+                    if args.fix_recon:
+                        loss_ = loss_mask
                     if args.gan_method:
                         loss_ += loss_g
 
@@ -211,7 +213,8 @@ def main():
                 if j % 100 == 0:
                     writer.add_figure('grad_flow', util.plot_grad_flow_v2(model.named_parameters()), global_step=step)
                     for n, p in model.named_parameters():
-                        writer.add_histogram(n, p.grad.data.cpu().numpy(), step)
+                        if p.requires_grad:
+                            writer.add_histogram(n, p.grad.data.cpu().numpy(), step)
                     if args.gan_method:
                         for n, p in model_dis.named_parameters():
                             writer.add_histogram('G_'+n, p.grad.data.cpu().numpy(), step)

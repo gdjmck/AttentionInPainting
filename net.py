@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+import shm
+import unet
 from torch import autograd
 # 从GAN InPainting引入in painting模型
 import sys
@@ -219,9 +221,8 @@ class InPainting(nn.Module):
     def __init__(self, cuda=False, mask_clipping=False):
         super(InPainting, self).__init__()
         self.clipping = mask_clipping
-        self.encoder = AutoEncoder()
-        self.painter = Generator(3, 48, cuda)
-        self.fine_painter = FineGenerator(3, 48, cuda)
+        self.encoder = unet.UNet(3, 1)
+        self.painter = unet.UNet(4, 3)
 
     def forward(self, x):
         mask = self.encoder(x)
@@ -243,9 +244,13 @@ class InPainting(nn.Module):
         else:
             mask_ = mask
         '''
-        inpaint_coarse = self.painter(x, mask)
-        inpaint = self.fine_painter(x, inpaint_coarse, mask)
-        return mask, inpaint, inpaint_coarse
+        ones = torch.ones((x.size(0), 1, x.size(2), x.size(3))).to(x.device)
+        mask_clamp = mask.clamp(0., 1.)
+        # x = ones * mask_clamp + x * (1-mask_clamp)
+        # 这样要限制(1-mask)区域的跟原图输入一致
+        x = torch.cat([x, mask_clamp], dim=1)
+        inpaint = self.painter(x)
+        return mask, inpaint
 
     def test_inference(self, x):
         mask = self.encoder(x)

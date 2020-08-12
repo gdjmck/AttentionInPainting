@@ -6,32 +6,49 @@ import os.path as osp
 from PIL import ImageDraw, ImageOps, Image, ImageFont
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
+from matplotlib import font_manager as fm, rcParams
+import torchvision.transforms as T
 
-prints = list(string.printable)[0:84]
+tv_transform = T.Compose([
+    T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+])
+
+tv_inv_transform = T.Compose([T.Normalize([0, 0, 0], [1/0.229, 1/0.224, 1/0.225])],
+                             [T.Normalize([-0.485, -0.456, -0.406], [1, 1, 1])])
+
+font_resources = glob.glob(os.path.join(rcParams['datapath'], 'fonts/ttf/*.ttf'))
+prints = list(string.printable)[:62]
 def random_text(img_pil):
     w, h = img_pil.size
     text_str = np.random.choice(prints, np.random.randint(low=4, high = 8))
     text_str = "".join(text_str)
+    if np.random.random() > 0.7:
+        text_str = '@' + text_str
     # draw the watermark on a blank
-    font_size = np.random.randint(12, 50)
-    font = ImageFont.truetype('/usr/share/fonts/wqy-zenhei/wqy-zenhei.ttc', font_size)
+    font_size = np.random.randint(16, 40)
+    print('font size:', font_size)
+    TTF_FONT = np.random.choice(font_resources, 1)[0]
+    font = ImageFont.truetype(TTF_FONT, font_size)
     text_width, text_height = font.getsize(text_str)
     # draw watermark on img_temp
     img_temp = Image.new('L', (int(1.2*text_width),
                                 int(1.2*text_height)))
     # use a pen to draw what we want
     draw_temp = ImageDraw.Draw(img_temp) 
-    opac = np.random.randint(low=255, high=256)
+    opac = np.random.randint(low=110, high=256)
     draw_temp.text((0, 0), text_str,  font=font, fill=opac)
     # rotate the watermark
     rot_int = np.random.randint(low = 0, high = 8)
+    print('rotate:', rot_int)
     rotated_text = img_temp.rotate(rot_int,  expand=1)
     '''
     '''
-    col_1 = (100,100,100)
-    col_2 = (np.random.randint(180, 255),
-            np.random.randint(180, 255),
-            np.random.randint(180, 255))
+    col_1 = (np.random.randint(50, 180),
+            np.random.randint(50, 180),
+            np.random.randint(50, 180))
+    col_2 = (np.random.randint(255, 256),
+            np.random.randint(255, 256),
+            np.random.randint(255, 256))
     # watermarks are drawn on the input image with white color
     '''
     col_1 = (255,255,255)
@@ -47,13 +64,15 @@ def random_text(img_pil):
     # 计算watermark在img_pil的位置
     text_mask = np.array(rotated_text)
     ys, xs = text_mask.nonzero()
+    if len(ys) == 0:
+        return img_pil, (0, 0, 0, 0, 0)
     x_min, x_max = xs.min(), xs.max() + 1
     y_min, y_max = ys.min(), ys.max() + 1
     
     '''
     return img_pil, (rand_loc[0]+(x_min+x_max)/2,
                     rand_loc[1]+(y_min+y_max)/2,
-                    x_max-x_min, y_max-y_min, rot_int)align_corners=False
+                    x_max-x_min, y_max-y_min, rot_int)
     '''
     return img_pil, (rand_loc[0]+x_min, rand_loc[1]+y_min, rand_loc[0]+x_max, rand_loc[1]+y_max, 1)
 
@@ -63,6 +82,11 @@ def normalize(x):
 
 def denormalize(x):
     return x.add_(1).mul_(0.5)
+
+def weights_init(m):
+    if isinstance(m, torch.nn.Conv2d):
+        torch.nn.init.xavier_uniform_(m.weight)
+        torch.nn.init.zeros_(m.bias)
 
 def inspect_image(img):
     if type(img) is str:

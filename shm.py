@@ -6,6 +6,7 @@ class VGG16(nn.Module):
     def __init__(self, input_channels=3, output_channels=1):
         super(VGG16, self).__init__()
 
+        self.upsample = nn.Upsample(scale_factor=2, mode='bilinear')
         self.conv1_1 = nn.Conv2d(input_channels, 64, kernel_size=3, stride=1, padding=1, bias=True)
         self.conv1_2 = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1, bias=True)
         self.conv2_1 = nn.Conv2d(64, 128, kernel_size=3, padding=1, bias=True)
